@@ -11,6 +11,10 @@ val TrekSurface = Color(0xFFFFFFFF)
 val TrekOnPrimary = Color.White
 val TrekOnBackground = Color(0xFF0D1B2A)
 
+// Nature Accents
+val TrekGreen = Color(0xFF43A047)              // Nature green
+val TrekGreenDark = Color(0xFF2E7D32)          // Darker green for contrast
+
 // Dark theme palette
 val TrekBluePrimaryDark = Color(0xFF90CAF9)
 val TrekBlueSecondaryDark = Color(0xFF1565C0)
