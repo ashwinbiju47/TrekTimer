@@ -2,24 +2,40 @@ package com.example.trektimer.ui.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.PlayArrow
+import com.example.trektimer.data.local.Trek
 import com.example.trektimer.data.local.User
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     user: User,
+    treks: List<Trek>,
     onLogout: () -> Unit,
     onStartTracking: () -> Unit
 ) {
+    // Calculate stats
+    val totalDistance = treks.sumOf { it.distanceKm }
+    val totalSeconds = treks.sumOf { it.durationSeconds }
+    val totalHours = totalSeconds / 3600
+    val totalMinutes = (totalSeconds % 3600) / 60
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -39,7 +55,7 @@ fun HomeScreen(
                 actions = {
                     IconButton(onClick = onLogout) {
                         Icon(
-                            imageVector = Icons.Default.ExitToApp,
+                            imageVector = Icons.AutoMirrored.Filled.ExitToApp,
                             contentDescription = "Logout",
                             tint = MaterialTheme.colorScheme.primary
                         )
@@ -73,9 +89,9 @@ fun HomeScreen(
                         .fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    StatItem(label = "Total Distance", value = "0 km")
-                    StatItem(label = "Total Time", value = "0h 0m")
-                    StatItem(label = "Treks", value = "0")
+                    StatItem(label = "Total Distance", value = String.format("%.1f km", totalDistance))
+                    StatItem(label = "Total Time", value = "${totalHours}h ${totalMinutes}m")
+                    StatItem(label = "Treks", value = "${treks.size}")
                 }
             }
 
@@ -83,7 +99,7 @@ fun HomeScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(200.dp),
+                    .height(160.dp),
                 shape = RoundedCornerShape(24.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                 colors = CardDefaults.cardColors(
@@ -95,12 +111,11 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Background pattern or image could go here
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
                             imageVector = Icons.Default.PlayArrow,
                             contentDescription = null,
-                            modifier = Modifier.size(64.dp),
+                            modifier = Modifier.size(56.dp),
                             tint = MaterialTheme.colorScheme.onPrimary
                         )
                         Spacer(modifier = Modifier.height(8.dp))
@@ -120,21 +135,117 @@ fun HomeScreen(
                 modifier = Modifier.padding(top = 8.dp)
             )
 
-            // Placeholder for list
+            // 4. Trek List
+            if (treks.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(16.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No recent treks yet.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(treks) { trek ->
+                        TrekItem(trek = trek)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TrekItem(trek: Trek) {
+    val dateFormat = SimpleDateFormat("MMM dd, yyyy • HH:mm", Locale.getDefault())
+    val dateString = dateFormat.format(Date(trek.startTime))
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Icon based on type
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
+                    .size(48.dp)
                     .background(
-                        color = MaterialTheme.colorScheme.surface,
-                        shape = RoundedCornerShape(16.dp)
+                        color = if (trek.isManualEntry) 
+                            MaterialTheme.colorScheme.secondaryContainer 
+                        else 
+                            MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(12.dp)
                     ),
                 contentAlignment = Alignment.Center
             ) {
+                Icon(
+                    imageVector = if (trek.isManualEntry) Icons.Default.Edit else Icons.Default.LocationOn,
+                    contentDescription = null,
+                    tint = if (trek.isManualEntry) 
+                        MaterialTheme.colorScheme.secondary 
+                    else 
+                        MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                if (trek.isManualEntry && trek.startLocationName != null && trek.endLocationName != null) {
+                    Text(
+                        text = "${trek.startLocationName?.take(20)} → ${trek.endLocationName?.take(20)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                } else {
+                    Text(
+                        text = if (trek.isManualEntry) "Manual Entry" else "GPS Trek",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
                 Text(
-                    text = "No recent treks yet.",
+                    text = dateString,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = String.format("%.2f km", trek.distanceKm),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                if (!trek.isManualEntry && trek.durationSeconds > 0) {
+                    val mins = trek.durationSeconds / 60
+                    Text(
+                        text = "${mins} min",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -155,3 +266,4 @@ fun StatItem(label: String, value: String) {
         )
     }
 }
+

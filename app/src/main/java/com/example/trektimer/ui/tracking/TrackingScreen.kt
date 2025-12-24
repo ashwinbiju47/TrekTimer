@@ -1,6 +1,11 @@
 package com.example.trektimer.ui.tracking
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.location.Location
+import android.os.Build
 import android.os.Bundle
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -8,9 +13,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.example.trektimer.location.LocationTracker
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.example.trektimer.location.LocationService
 import com.example.trektimer.map.MapConfig
 
 // MapLibre uses Mapbox package names internally
@@ -28,20 +36,52 @@ import com.mapbox.geojson.Point
 @Composable
 fun TrackingScreen(
     viewModel: TrekViewModel,
-    tracker: LocationTracker,
     onExit: () -> Unit
 ) {
+    val context = LocalContext.current
     var mapView: MapView? by remember { mutableStateOf(null) }
     var mapLibre: MapboxMap? by remember { mutableStateOf(null) }
-    var isTracking by remember { mutableStateOf(false) }
+
+    val isTracking by viewModel.isTracking.collectAsStateWithLifecycle()
+    val elapsedTime by viewModel.elapsedTimeSeconds.collectAsStateWithLifecycle()
+
+    // Register broadcast receiver for location updates
+    DisposableEffect(Unit) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val location = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent?.getParcelableExtra(LocationService.EXTRA_LOCATION, Location::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent?.getParcelableExtra(LocationService.EXTRA_LOCATION)
+                }
+                location?.let { loc ->
+                    viewModel.addPoint(loc)
+                    // Camera follow user
+                    mapLibre?.animateCamera(
+                        CameraUpdateFactory.newLatLng(LatLng(loc.latitude, loc.longitude))
+                    )
+                }
+            }
+        }
+
+        LocalBroadcastManager.getInstance(context).registerReceiver(
+            receiver,
+            IntentFilter(LocationService.ACTION_LOCATION_UPDATE)
+        )
+
+        onDispose {
+            LocalBroadcastManager.getInstance(context).unregisterReceiver(receiver)
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
 
         // 1. Full Screen Map
         AndroidView(
             modifier = Modifier.fillMaxSize(),
-            factory = { context ->
-                MapView(context).apply {
+            factory = { ctx ->
+                MapView(ctx).apply {
                     onCreate(Bundle())
                     getMapAsync { map ->
                         mapLibre = map
@@ -80,6 +120,7 @@ fun TrackingScreen(
                     .fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceAround
             ) {
+                // Distance
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = viewModel.distance.format(2),
@@ -91,6 +132,19 @@ fun TrackingScreen(
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
+                // Elapsed Time
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = formatElapsedTime(elapsedTime),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "time",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                // Speed
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = viewModel.speed.format(1),
@@ -126,7 +180,14 @@ fun TrackingScreen(
             ) {
                 // Back / Exit
                 OutlinedButton(
-                    onClick = onExit,
+                    onClick = {
+                        if (isTracking) {
+                            // Stop service first
+                            context.stopService(Intent(context, LocationService::class.java))
+                            viewModel.stopTracking()
+                        }
+                        onExit()
+                    },
                     shape = RoundedCornerShape(50)
                 ) {
                     Text("Exit")
@@ -136,11 +197,16 @@ fun TrackingScreen(
                 Button(
                     onClick = {
                         if (isTracking) {
-                            isTracking = false
-                            tracker.stopTracking()
+                            context.stopService(Intent(context, LocationService::class.java))
+                            viewModel.stopTracking()
                         } else {
-                            isTracking = true
-                            tracker.startTracking { loc -> viewModel.addPoint(loc) }
+                            viewModel.startTracking()
+                            val serviceIntent = Intent(context, LocationService::class.java)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                context.startForegroundService(serviceIntent)
+                            } else {
+                                context.startService(serviceIntent)
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -161,27 +227,18 @@ fun TrackingScreen(
     }
 }
 
-@Composable
-fun SummaryCard(
-    distance: Double,
-    speed: Double
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text("Distance: ${distance.format(2)} km")
-            Text("Speed: ${speed.format(2)} m/s")
-        }
+fun formatElapsedTime(seconds: Long): String {
+    val hrs = seconds / 3600
+    val mins = (seconds % 3600) / 60
+    val secs = seconds % 60
+    return if (hrs > 0) {
+        String.format("%d:%02d:%02d", hrs, mins, secs)
+    } else {
+        String.format("%02d:%02d", mins, secs)
     }
 }
 
 fun Double.format(digits: Int) = "%.${digits}f".format(this)
-
 
 // Draw GPS path on MapLibre
 fun drawPolyline(map: MapboxMap?, points: List<LatLng>) {
@@ -207,5 +264,3 @@ fun drawPolyline(map: MapboxMap?, points: List<LatLng>) {
         addLayer(lineLayer)
     }
 }
-
-

@@ -5,7 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.trektimer.data.local.User
-import com.example.trektimer.data.local.UserDatabase
+import com.example.trektimer.data.local.AppDatabase
 import com.example.trektimer.data.repository.UserRepository
 import kotlinx.coroutines.launch
 import com.google.firebase.auth.FirebaseAuth
@@ -18,7 +18,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         FirebaseAuth.getInstance()
     }
 
-    private val userDao = UserDatabase.getDatabase(application).userDao()
+    private val userDao = AppDatabase.getDatabase(application).userDao()
     private val repository = UserRepository(userDao)
 
     var authMessage = mutableStateOf<String?>(null)
